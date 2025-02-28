@@ -1,0 +1,66 @@
+name: Anchor Tests
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🦀 Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: 🛠 Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential libudev-dev
+
+      - name: 🚀 Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          solana --version
+
+      - name: 🛠 Install Anchor
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install latest
+          avm use latest
+          anchor --version
+
+      - name: 🔧 Configure Solana & Start Validator
+        run: |
+          solana config set --url localhost
+          solana-test-validator --reset --quiet &
+          sleep 5
+          solana-keygen new --silent --force --no-bip39-passphrase
+          solana airdrop 10
+
+      - name: 🔍 Run Anchor tests
+        run: anchor test --skip-build --skip-deploy
+        env:
+          ANCHOR_PROVIDER_URL: http://localhost:8899
+          ANCHOR_WALLET: ~/.config/solana/id.json
+
+      - name: 🛑 Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-logs
+          path: .anchor
+
+      - name: ✅ Clean up
+        run: |
+          pkill -f solana-test-validator || true
